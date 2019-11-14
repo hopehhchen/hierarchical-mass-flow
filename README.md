@@ -10,3 +10,4 @@ Code deposit for the hierarchical mass flow project.
   * `astrodendro`: 0.2.0
   * `skimage`: 0.15.0
 3. See inline comments for explanations.
+4. See an example in `example.ipynb`.
