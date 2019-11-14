@@ -55,11 +55,14 @@ class HMFlow3D(object):
         perodic: whether the arrays have a periodic boundary condition.  The
                  default is True.
 
-        min_value:
+        min_value: minimum value in density to consider.  See astrodendro.
 
-        min_npix:
+        min_npix: minimum number of voxels in a structure for it to be
+                  considered.  See astrodendro.
 
-        min_delta:
+        min_delta: minimum difference in density for a structure to be
+                   considered, i.e. from the saddle point where it joins with
+                   another structure to the peak.  See astrodendro.
         """
 
         # test for non-optional parameters for astrodendro
