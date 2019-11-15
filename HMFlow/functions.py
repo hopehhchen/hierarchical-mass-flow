@@ -2,6 +2,7 @@ import numpy as np
 
 import astropy.units as u
 import astropy.constants as c
+import astropy.modeling as modeling
 
 # constants
 mass_avg = 2.8*u.u
@@ -85,3 +86,60 @@ def prepare3D(HMFlow_object):
     massflow_magsign = (flux_magsign*(u.Msun*u.pc**-2.*u.yr**-1.)*pixscale**2.).to(u.Msun*u.yr**-1.).value
 
     return inflowcomp_magsign, flux_magsign, massflow_magsign
+
+
+def quick2D(N, v, mask0, ev = None):
+
+    """
+    A quick function to fit the velocity gradient.
+
+    Parameters
+    ------
+    N: column density/indensity map.
+
+    v: velocity map.
+
+    mask: mask.
+
+    ev: an uncertainty map in the velocity fit.  Default is None.
+
+
+
+    """
+
+    #
+    if ev is None:
+        mask = (mask0 & np.isfinite(v) & np.isfinite(N))
+    else:
+        mask = (mask0 & np.isfinite(v) & np.isfinite(N) & np.isfinite(ev))
+    ## return nan if nothing is in the aperture
+    if np.sum(mask) == 0.:
+        return np.nan, np.nan, np.nan
+
+    # average surface density/brightness
+    Sigma = np.nanmean(N[mask])  ## N unit
+
+    # velocity gradient
+    xmesh, ymesh = np.meshgrid(np.arange(v.shape[1]),
+                               np.arange(v.shape[0]))
+
+    z = v[mask]
+    x, y = xmesh[mask], ymesh[mask]
+    w = mask.astype(float)[mask]if ev is None else (1./ev**2.)[mask]
+
+    model = modeling.functional_models.Planar2D() ## slope_x, slope_y, intercept
+    fitter = modeling.fitting.LevMarLSQFitter()
+    fitted = fitter(model, x, y, z, weights = w)
+
+
+    slope_x, slope_y = fitted.slope_x, fitted.slope_y
+
+    dV_mag = np.hypot(slope_x, slope_y) ## velocity unit/pixel
+
+    # size
+    ## This is for calculating an effective radius for irregular shapes from
+    ## dendrogram.  Can be turned off if it's slowing down the calculation
+    ## in the aperture method.
+    dR = np.sqrt(np.sum(mask0)/np.pi)  ## ~ pixel size
+
+    return Sigma, dV_mag, dR

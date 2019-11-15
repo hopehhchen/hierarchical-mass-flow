@@ -117,3 +117,116 @@ class HMFlow3D(object):
         # output in csv
         df_out = pd.DataFrame(df_out)
         df_out.to_csv(direc, index = False)
+
+
+class HMFlow2D(object):
+
+    """
+    A wrapper around the gradient fitting functions.  Mask out non-detection
+    with NaN.  Make sure the maps are in the same shape and projection.
+
+    Parameters
+    ------
+    N: column density/indensity map.
+
+    v: velocity map.
+
+    ev: an uncertainty map in the velocity fit.  This is used to weight the
+        pixels when fitting the velocity gradient.  When None, use a uniform
+        weighting instead.  Default is None.
+
+    """
+
+
+    def __init__(self, N, v, ev = None):
+
+        self.N = N
+        self.v = v
+        self.ev = ev if ev is not None else None
+
+        if ev is not None:
+            self.mask = (np.isfinite(N) & np.isfinite(v) & np.isfinite(ev))
+        else:
+            self.mask = (np.isfinite(N) & np.isfinite(v))
+
+    def grad_aperture(self, min_rad, max_rad, nstep_rad):
+
+        """
+        Circular aperture method.  Sizes are in units of pixel lengths.
+
+        min_rad: the minimum radius.
+
+        max_rad: the maximum radius.
+
+        nstep_rad: how many steps to take to increase the radius of the aperture
+                   from min_rad to max_rad.
+        """
+
+        xmesh, ymesh = np.meshgrid(np.arange(self.N.shape[1]),
+                                   np.arange(self.N.shape[0]))
+
+        x_iter, y_iter = xmesh[self.mask], ymesh[self.mask]
+        rad_iter = np.linspace(min_rad, max_rad, int(nstep_rad))
+
+        dict_massflow = defaultdict(list)
+        df_massflow = defaultdict(list)
+        for rad in rad_iter:
+
+            map_massflow = np.zeros(self.N.shape)*np.nan
+
+            for (x, y) in zip(x_iter, y_iter):
+
+                mask_i = (np.hypot(xmesh-x, ymesh-y) <= rad)
+                Sigma_i, dV_i, dR_i = quick2D(self.N, self.v, mask_i, ev = self.ev)
+                ## Note that dV_i is velocity gradient (dV/dR).
+
+                map_massflow[y, x] = Sigma_i*dV_i*(2.*dR_i)**2.
+
+            # output maps for examination
+            dict_massflow['size'].append(rad*2.)
+            dict_massflow['map_massflow'].append(map_massflow)
+
+            # calculate numbers for plotting the massflow-size relation
+            df_massflow['med_massflow'].append(np.nanmedian(map_massflow))
+            df_massflow['spr_massflow'].append(np.nanpercentile(map_massflow, 84.)-np.nanpercentile(map_massflow, 16.))
+            ## Use the difference between 84th and 16th percentiles as an
+            ## estimate for the spread.  This is based on 1-sig in a Gaussian
+            ## distribution.
+
+        df_massflow = pd.DataFrame(df_massflow)
+        df_massflow['size'] = dict_massflow['size']
+        self.df_massflow_aperture = df_massflow
+        self.maps_massflow_aperture = dict_massflow
+
+    def grad_dendro(self, min_value, min_npix, min_delta):
+
+        """
+        Calculate the dendrogram
+
+        Parameters
+        ------
+        min_value: minimum value in density to consider.  See astrodendro.
+
+        min_npix: minimum number of voxels in a structure for it to be
+                  considered.  See astrodendro.
+
+        min_delta: minimum difference in density for a structure to be
+                   considered, i.e. from the saddle point where it joins with
+                   another structure to the peak.  See astrodendro.
+        """
+
+        dendro = Dendrogram.compute(self.N, min_value = min_value, min_npix = min_npix, min_delta = min_delta)
+        self.dendro = dendro
+
+        df_massflow = defaultdict(list)
+        for i in range(len(dendro)):
+
+            mask_i = dendro[i].get_mask()
+
+            Sigma_i, dV_i, dR_i = quick2D(self.N, self.v, mask_i, ev = self.ev)
+
+            df_massflow['size'].append(2.*dR_i)
+            df_massflow['massflow'].append(Sigma_i*dV_i*(2.*dR_i)**2.)
+
+        df_massflow = pd.DataFrame(df_massflow)
+        self.df_massflow_dendro = df_massflow
